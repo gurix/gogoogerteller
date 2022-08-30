@@ -6,27 +6,33 @@ import (
 
 	"github.com/google/gopacket"
 	"github.com/google/gopacket/layers"
+	"github.com/gurix/gogoogerteller/util"
 
 	"github.com/google/gopacket/pcap"
-	log "github.com/sirupsen/logrus"
 )
 
 var iface string
+var localIP string
 
 func init() {
 	flag.StringVar(&iface, "iface", "en0", "Network interface to listeon on")
 }
 
 func main() {
-	log.Info("Starting Application")
-
 	InitCrackling()
 
-	if handle, err := pcap.OpenLive("en0", 1600, true, pcap.BlockForever); err != nil {
+	if addr, err := util.GetInterfaceIpv4Addr(iface); err != nil {
+		panic(err)
+	} else {
+		localIP = addr
+	}
+
+	if handle, err := pcap.OpenLive(iface, 1600, true, pcap.BlockForever); err != nil {
 		panic(err)
 	} else if err := handle.SetBPFFilter("tcp"); err != nil { // Only watch for tcp traffic
 		panic(err)
 	} else {
+
 		packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
 		for packet := range packetSource.Packets() {
 			handlePacket(packet)
@@ -44,10 +50,10 @@ func handlePacket(p gopacket.Packet) {
 
 	var decoded []gopacket.LayerType
 	parser := gopacket.NewDecodingLayerParser(layers.LayerTypeEthernet, &eth, &ip, &ipv6, &tcp, &udp, &payload)
-	if err := parser.DecodeLayers(p.Data(), &decoded); err != nil {
-		log.Printf("processor %v", err)
-	} else {
-		fmt.Println(ip.DstIP)
-		Crackle()
+	if err := parser.DecodeLayers(p.Data(), &decoded); err == nil {
+		if ip.SrcIP.String() == localIP && ip.DstIP != nil {
+			fmt.Printf("%s --> %s\n", ip.SrcIP, ip.DstIP)
+			Crackle()
+		}
 	}
 }
